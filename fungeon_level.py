@@ -5,6 +5,7 @@ from pathlib import Path
 import random
 
 from fungeon_enemies import ENEMY_TYPES
+from fungeon_obstacles import BlockGrid, GRID_SIZE
 
 
 DEFAULT_LEVEL_PATH = Path(__file__).parent / "levels" / "level1.txt"
@@ -19,6 +20,7 @@ class Level:
     player_start: tuple[float, float]
     chests: tuple[tuple[float, float], ...]
     enemies: tuple[tuple[str, float, float], ...]
+    blocks: tuple[tuple[int, int], ...]
     source_path: Path
 
 
@@ -29,6 +31,7 @@ def load_level(path=DEFAULT_LEVEL_PATH):
     player_start = None
     chests = []
     enemies = []
+    blocks = []
 
     with Path(path).open(encoding="utf-8") as level_file:
         for line_number, raw_line in enumerate(level_file, start=1):
@@ -60,6 +63,8 @@ def load_level(path=DEFAULT_LEVEL_PATH):
                     enemies.append(
                         (enemy_type, float(parts[2]), float(parts[3]))
                     )
+                elif directive == "block" and len(parts) == 3:
+                    blocks.append((int(parts[1]), int(parts[2])))
                 else:
                     raise ValueError(f"invalid level directive: {line!r}")
             except ValueError as error:
@@ -72,14 +77,45 @@ def load_level(path=DEFAULT_LEVEL_PATH):
     if player_start is None:
         raise ValueError(f"{path}: level must define exactly one player spawn")
 
-    positions = [player_start, *chests]
-    positions.extend((x, y) for _, x, y in enemies)
-    # Catch invalid spawns here rather than letting entities start off-room.
-    for x, y in positions:
+    columns = (width + GRID_SIZE - 1) // GRID_SIZE
+    rows = (height + GRID_SIZE - 1) // GRID_SIZE
+    block_grid = BlockGrid(width, height, blocks)
+    for cell in blocks:
+        column, row = cell
+        if not (0 <= column < columns and 0 <= row < rows):
+            raise ValueError(
+                f"{path}: block cell ({column}, {row}) is outside the "
+                f"{columns}x{rows} grid"
+            )
+        left, bottom, right, top = block_grid.cell_bounds(cell)
+        exit_left = width / 2 - 77
+        exit_right = width / 2 + 77
+        if (
+            right > exit_left
+            and left < exit_right
+            and top > height - 36
+        ):
+            raise ValueError(f"{path}: block cell {cell} overlaps the room exit")
+    if len(set(blocks)) != len(blocks):
+        raise ValueError(f"{path}: block cells cannot be duplicated")
+
+    entity_positions = [(player_start[0], player_start[1], 22)]
+    entity_positions.extend((x, y, 30) for x, y in chests)
+    entity_positions.extend(
+        (x, y, ENEMY_TYPES[enemy_type]["size"])
+        for enemy_type, x, y in enemies
+    )
+    for x, y, _ in entity_positions:
         if not (0 <= x <= width and 0 <= y <= height):
             raise ValueError(
                 f"{path}: entity position ({x:g}, {y:g}) is outside "
                 f"the level bounds ({width}, {height})"
+            )
+
+    for x, y, radius in entity_positions:
+        if block_grid.collides_circle(x, y, radius):
+            raise ValueError(
+                f"{path}: entity position ({x:g}, {y:g}) overlaps a block"
             )
 
     return Level(
@@ -88,6 +124,7 @@ def load_level(path=DEFAULT_LEVEL_PATH):
         player_start=player_start,
         chests=tuple(chests),
         enemies=tuple(enemies),
+        blocks=tuple(blocks),
         source_path=Path(path).resolve(),
     )
 

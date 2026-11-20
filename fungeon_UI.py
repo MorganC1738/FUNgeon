@@ -2,7 +2,8 @@
 
 import arcade
 
-from fungeon_loot import LOOT_COLORS, WEAPONS
+# Use the loot module's palette as the single source of rarity colors.
+from fungeon_loot import ITEMS, LOOT_COLORS, RARITY_COLORS, WEAPONS
 
 
 HEALTH_BACKGROUND = (75, 43, 52)
@@ -11,14 +12,6 @@ SLOT_BACKGROUND = (48, 56, 78)
 SLOT_UNSELECTED = (105, 112, 128)
 SLOT_SELECTED = (100, 220, 170)
 TEXT_COLOR = (240, 244, 255)
-RARITY_COLORS = {
-    "common": (205, 210, 220),
-    "uncommon": (100, 220, 140),
-    "rare": (90, 160, 255),
-    "epic": (190, 110, 255),
-    "legendary": (255, 190, 70),
-    "mythic": (255, 95, 160),
-}
 
 
 class FungeonUI:
@@ -43,6 +36,47 @@ class FungeonUI:
     ):
         self._draw_health_bar(health, max_health)
         self._draw_slots(screen_width, screen_height, inventory, slot_items)
+
+    def draw_active_effects(
+        self,
+        screen_width,
+        shield,
+        damage_boost,
+        damage_boost_timer,
+    ):
+        """Show persistent buffs just above the bottom-right equipment slots."""
+        active_effects = []
+        if shield > 0:
+            active_effects.append((f"WARD {shield:g}", (105, 205, 225)))
+        if damage_boost > 0 and damage_boost_timer > 0:
+            active_effects.append(
+                (
+                    f"BERSERK +{damage_boost:.0%} {damage_boost_timer:.1f}s",
+                    (255, 115, 80),
+                )
+            )
+
+        for index, (label, color) in enumerate(active_effects):
+            y = 84 + index * 24
+            arcade.draw_rect_filled(
+                arcade.XYWH(screen_width - 92, y, 168, 21),
+                (25, 32, 46, 225),
+            )
+            arcade.draw_rect_outline(
+                arcade.XYWH(screen_width - 92, y, 168, 21),
+                color,
+                border_width=2,
+            )
+            arcade.draw_text(
+                label,
+                screen_width - 92,
+                y,
+                color,
+                font_size=11,
+                bold=True,
+                anchor_x="center",
+                anchor_y="center",
+            )
 
     def draw_inventory(
         self,
@@ -148,14 +182,23 @@ class FungeonUI:
                 font_size=12,
                 anchor_x="center",
             )
-            weapon = WEAPONS[item_name]
+            if item_name in WEAPONS:
+                weapon = WEAPONS[item_name]
+                item_details = (
+                    f"{weapon['attack_type'].upper()} {weapon['damage']}D "
+                    f"{weapon['range']:g}R"
+                )
+                if weapon["width"]:
+                    item_details += f" W{weapon['width']:g}"
+                item_details += f" {weapon['cooldown']:g}s"
+            else:
+                item_details = ITEMS[item_name]["description"]
             arcade.draw_text(
-                f"DMG {weapon['damage']}  RNG {weapon['range']:g}  "
-                f"CD {weapon['cooldown']:g}s",
+                item_details,
                 x + 5,
                 y - 23,
                 TEXT_COLOR,
-                font_size=9,
+                font_size=8,
                 anchor_x="center",
             )
             # Keep the stack count anchored at the lower-left of each item box.
@@ -234,8 +277,8 @@ class FungeonUI:
         screen_height,
         inventory,
         selected_item,
-    ):
-        """Map clicks in the selected item's dropdown rows to slot numbers."""
+    ) -> int | None:
+        """Return the clicked equip/unequip slot for any inventory item."""
         if selected_item not in inventory:
             return None
 
@@ -455,6 +498,17 @@ class FungeonUI:
                     anchor_x="center",
                     anchor_y="center",
                 )
+                if item_name in ITEMS:
+                    arcade.draw_text(
+                        "USE",
+                        x,
+                        y + size * 0.3,
+                        color,
+                        font_size=8,
+                        bold=True,
+                        anchor_x="center",
+                        anchor_y="center",
+                    )
                 arcade.draw_text(
                     str(slot),
                     x,
